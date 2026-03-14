@@ -18,19 +18,33 @@ const {
     createStudent,
     updateStudent,
     deleteStudent,
+    getStudentProgress,
+    completeCourse,
+    dismissCourse,
+    dismissQuiz,
+    getMyProgress,
 } = require('../controllers/userController');
 const { protect, authorizeRoles } = require('../middleware/authMiddleware');
 
-// All routes require a valid token AND the 'teacher' role
-router.use(protect, authorizeRoles('teacher'));
+// All routes here require a valid token
+router.use(protect);
 
+// --- Teacher Routes ---
 router.route('/students')
-    .get(getAllStudents)
-    .post(createStudent);
+    .get(authorizeRoles('teacher'), getAllStudents)
+    .post(authorizeRoles('teacher'), createStudent);
 
 router.route('/students/:id')
-    .get(getStudentById)
-    .put(updateStudent)
-    .delete(deleteStudent);
+    .get(authorizeRoles('teacher'), getStudentById)
+    .put(authorizeRoles('teacher'), updateStudent)
+    .delete(authorizeRoles('teacher'), deleteStudent);
+
+router.get('/students/:id/progress', authorizeRoles('teacher'), getStudentProgress);
+
+// --- Student Routes ---
+router.get('/me/progress', authorizeRoles('student'), getMyProgress);
+router.post('/me/complete-course/:id', authorizeRoles('student'), completeCourse);
+router.post('/me/dismiss-course/:id', authorizeRoles('student'), dismissCourse);
+router.post('/me/dismiss-quiz/:id', authorizeRoles('student'), dismissQuiz);
 
 module.exports = router;

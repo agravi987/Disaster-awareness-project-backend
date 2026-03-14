@@ -131,10 +131,134 @@ const deleteStudent = async (req, res) => {
     }
 };
 
+/**
+ * @desc    Get student's progress log (completed courses/quizzes)
+ * @route   GET /api/users/students/:id/progress
+ * @access  Private/Teacher
+ */
+const getStudentProgress = async (req, res) => {
+    try {
+        const student = await User.findById(req.params.id)
+            .select('completedCourses name')
+            .populate('completedCourses', 'title category');
+
+        if (!student) {
+            return res.status(404).json({ message: 'Student not found' });
+        }
+
+        // Fetch completed quizzes for this student
+        const Quiz = require('../models/Quiz');
+        const quizzes = await Quiz.find({ 'submissions.student': student._id })
+            .select('title questions submissions');
+
+        const completedQuizzes = quizzes.map(quiz => {
+            const submission = quiz.submissions.find(s => s.student.toString() === student._id.toString());
+            return {
+                _id: quiz._id,
+                title: quiz.title,
+                score: submission.score,
+                total: quiz.questions.length,
+                submittedAt: submission.submittedAt
+            };
+        });
+
+        res.json({
+            studentName: student.name,
+            completedCourses: student.completedCourses,
+            completedQuizzes
+        });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+/**
+ * @desc    Mark a course as completed
+ * @route   POST /api/users/me/complete-course/:id
+ * @access  Student
+ */
+const completeCourse = async (req, res) => {
+    try {
+        const user = await User.findById(req.user._id);
+        const courseId = req.params.id;
+
+        if (!user.completedCourses.includes(courseId)) {
+            user.completedCourses.push(courseId);
+            await user.save();
+        }
+
+        res.json({ message: 'Course marked as completed' });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+/**
+ * @desc    Dismiss a completed course from view
+ * @route   POST /api/users/me/dismiss-course/:id
+ * @access  Student
+ */
+const dismissCourse = async (req, res) => {
+    try {
+        const user = await User.findById(req.user._id);
+        const courseId = req.params.id;
+
+        if (!user.dismissedCourses.includes(courseId)) {
+            user.dismissedCourses.push(courseId);
+            await user.save();
+        }
+
+        res.json({ message: 'Course dismissed' });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+/**
+ * @desc    Dismiss a completed quiz from view
+ * @route   POST /api/users/me/dismiss-quiz/:id
+ * @access  Student
+ */
+const dismissQuiz = async (req, res) => {
+    try {
+        const user = await User.findById(req.user._id);
+        const quizId = req.params.id;
+
+        if (!user.dismissedQuizzes.includes(quizId)) {
+            user.dismissedQuizzes.push(quizId);
+            await user.save();
+        }
+
+        res.json({ message: 'Quiz dismissed' });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+/**
+ * @desc    Get user's dismissed/completed data
+ * @route   GET /api/users/me/progress
+ * @access  Student
+ */
+const getMyProgress = async (req, res) => {
+    try {
+        const user = await User.findById(req.user._id)
+            .select('completedCourses dismissedCourses dismissedQuizzes');
+        res.json(user);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
 module.exports = {
     getAllStudents,
     getStudentById,
     createStudent,
     updateStudent,
     deleteStudent,
+    getStudentProgress,
+    completeCourse,
+    dismissCourse,
+    dismissQuiz,
+    getMyProgress,
 };

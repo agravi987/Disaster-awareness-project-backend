@@ -46,6 +46,27 @@ const userSchema = new mongoose.Schema(
                 ref: 'Course',
             },
         ],
+        // courses the student has completed
+        completedCourses: [
+            {
+                type: mongoose.Schema.Types.ObjectId,
+                ref: 'Course',
+            },
+        ],
+        // courses the student has dismissed from UI
+        dismissedCourses: [
+            {
+                type: mongoose.Schema.Types.ObjectId,
+                ref: 'Course',
+            },
+        ],
+        // quizzes the student has dismissed from UI
+        dismissedQuizzes: [
+            {
+                type: mongoose.Schema.Types.ObjectId,
+                ref: 'Quiz',
+            },
+        ],
     },
     {
         // Automatically adds createdAt and updatedAt timestamps
