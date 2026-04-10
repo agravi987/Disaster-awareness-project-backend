@@ -70,6 +70,9 @@ app.use('/api/quizzes', require('./routes/quizRoutes'));
 // News proxy route (fetches news from external API)
 app.use('/api/news', require('./routes/newsRoutes'));
 
+// Disaster intelligence routes (map events, geocoding, weather)
+app.use('/api/disaster', require('./routes/disasterRoutes'));
+
 // Image upload route (Cloudinary)
 app.use('/api/upload', require('./routes/uploadRoutes'));
 

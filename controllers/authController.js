@@ -69,7 +69,7 @@ const registerUser = async (req, res) => {
  * @access  Public
  */
 const loginUser = async (req, res) => {
-    const { email, password } = req.body;
+    const { email, password, expectedRole } = req.body;
 
     try {
         // Find the user by email (include password hash for comparison)
@@ -82,6 +82,12 @@ const loginUser = async (req, res) => {
         const isPasswordCorrect = await user.comparePassword(password);
         if (!isPasswordCorrect) {
             return res.status(401).json({ message: 'Invalid email or password' });
+        }
+
+        if (expectedRole && user.role !== expectedRole) {
+            return res.status(403).json({
+                message: `This account is registered as ${user.role}. Please use the ${user.role} login.`,
+            });
         }
 
         // Return user info and a fresh token
