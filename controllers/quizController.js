@@ -9,6 +9,10 @@ const Quiz = require('../models/Quiz');
 const Group = require('../models/Group');
 const User = require('../models/User');
 const Groq = require('groq-sdk');
+const {
+    getAllStudentIds,
+    createNotificationsForRecipients,
+} = require('../utils/notificationService');
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
@@ -22,6 +26,27 @@ const createQuiz = async (req, res) => {
             questions: questions || [],
             teacher: req.user._id,
         });
+
+        try {
+            const studentIds = await getAllStudentIds();
+            await createNotificationsForRecipients({
+                recipientIds: studentIds,
+                actorId: req.user._id,
+                kind: 'quiz_created',
+                entityType: 'quiz',
+                entityId: quiz._id,
+                batchKey: `quiz-created-${quiz._id.toString()}`,
+                title: `New Quiz Published: ${quiz.title}`,
+                message: `${req.user.name} created a new quiz for disaster preparedness practice.`,
+                meta: {
+                    route: '/student/quizzes',
+                    teacherName: req.user.name,
+                },
+            });
+        } catch (notificationError) {
+            console.error('Quiz creation notification failed:', notificationError.message);
+        }
+
         res.status(201).json(quiz);
     } catch (error) {
         res.status(500).json({ message: error.message });
@@ -147,6 +172,26 @@ const assignQuiz = async (req, res) => {
         });
 
         await quiz.save();
+
+        try {
+            await createNotificationsForRecipients({
+                recipientIds: Array.from(allStudentIdsToAssign),
+                actorId: req.user._id,
+                kind: 'quiz_assigned',
+                entityType: 'quiz',
+                entityId: quiz._id,
+                batchKey: `quiz-assigned-${quiz._id.toString()}-${Date.now()}`,
+                title: `Quiz Assigned: ${quiz.title}`,
+                message: `${req.user.name} assigned a quiz to you. Open My Quizzes to attempt it.`,
+                meta: {
+                    route: '/student/quizzes',
+                    teacherName: req.user.name,
+                },
+            });
+        } catch (notificationError) {
+            console.error('Quiz assignment notification failed:', notificationError.message);
+        }
+
         res.json({ message: 'Quiz assigned successfully', quiz });
     } catch (error) {
         res.status(500).json({ message: error.message });
@@ -188,6 +233,28 @@ const submitQuiz = async (req, res) => {
             score,
         });
         await quiz.save();
+
+        try {
+            await createNotificationsForRecipients({
+                recipientIds: [quiz.teacher.toString()],
+                actorId: req.user._id,
+                kind: 'quiz_submitted',
+                entityType: 'quiz',
+                entityId: quiz._id,
+                batchKey: `quiz-submitted-${quiz._id.toString()}-${req.user._id.toString()}`,
+                title: `${req.user.name} submitted a quiz`,
+                message: `${req.user.name} submitted "${quiz.title}" and scored ${score}/${quiz.questions.length}.`,
+                meta: {
+                    studentId: req.user._id.toString(),
+                    studentName: req.user.name,
+                    score,
+                    total: quiz.questions.length,
+                    route: `/teacher/quizzes`,
+                },
+            });
+        } catch (notificationError) {
+            console.error('Quiz submission notification failed:', notificationError.message);
+        }
 
         res.json({
             message: 'Quiz submitted successfully',

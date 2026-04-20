@@ -13,6 +13,8 @@
 
 const User = require('../models/User');
 const bcrypt = require('bcryptjs');
+const Course = require('../models/Course');
+const { createNotificationsForRecipients } = require('../utils/notificationService');
 
 /**
  * @desc    Get all students
@@ -181,10 +183,36 @@ const completeCourse = async (req, res) => {
     try {
         const user = await User.findById(req.user._id);
         const courseId = req.params.id;
+        const alreadyCompleted = user.completedCourses.some(
+            (id) => id.toString() === courseId.toString()
+        );
 
-        if (!user.completedCourses.includes(courseId)) {
+        if (!alreadyCompleted) {
             user.completedCourses.push(courseId);
             await user.save();
+
+            const course = await Course.findById(courseId).select('title teacher');
+            if (course?.teacher) {
+                try {
+                    await createNotificationsForRecipients({
+                        recipientIds: [course.teacher.toString()],
+                        actorId: user._id,
+                        kind: 'course_completed',
+                        entityType: 'course',
+                        entityId: course._id,
+                        batchKey: `course-completed-${course._id.toString()}-${user._id.toString()}`,
+                        title: `${user.name} completed a course`,
+                        message: `${user.name} completed "${course.title}".`,
+                        meta: {
+                            studentId: user._id.toString(),
+                            studentName: user.name,
+                            route: `/teacher/students`,
+                        },
+                    });
+                } catch (notificationError) {
+                    console.error('Course completion notification failed:', notificationError.message);
+                }
+            }
         }
 
         res.json({ message: 'Course marked as completed' });

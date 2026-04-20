@@ -30,10 +30,14 @@ const protect = async (req, res, next) => {
         req.headers.authorization &&
         req.headers.authorization.startsWith('Bearer')
     ) {
-        try {
-            // Extract the token from "Bearer <token>"
-            token = req.headers.authorization.split(' ')[1];
+        token = req.headers.authorization.split(' ')[1];
+    } else if (typeof req.query?.token === 'string' && req.query.token.trim()) {
+        // Supports SSE/EventSource authentication from browser clients.
+        token = req.query.token.trim();
+    }
 
+    if (token) {
+        try {
             // Verify and decode the token using the secret from .env
             const decoded = jwt.verify(token, process.env.JWT_SECRET);
 

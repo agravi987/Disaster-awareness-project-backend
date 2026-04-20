@@ -20,6 +20,10 @@
 const Course = require('../models/Course');
 const User = require('../models/User');
 const { deleteImageFromCloudinary } = require('./uploadController');
+const {
+    getAllStudentIds,
+    createNotificationsForRecipients,
+} = require('../utils/notificationService');
 
 /** @desc Create a new course | @route POST /api/courses | @access Teacher */
 const createCourse = async (req, res) => {
@@ -33,6 +37,28 @@ const createCourse = async (req, res) => {
             thumbnail,
             teacher: req.user._id,
         });
+
+        try {
+            const studentIds = await getAllStudentIds();
+            await createNotificationsForRecipients({
+                recipientIds: studentIds,
+                actorId: req.user._id,
+                kind: 'course_created',
+                entityType: 'course',
+                entityId: course._id,
+                batchKey: `course-created-${course._id.toString()}`,
+                title: `New Course Available: ${course.title}`,
+                message: `${req.user.name} published a new course${course.category ? ` in ${course.category}` : ''}.`,
+                meta: {
+                    route: `/student/courses/${course._id}`,
+                    teacherName: req.user.name,
+                    category: course.category || 'General',
+                },
+            });
+        } catch (notificationError) {
+            console.error('Course creation notification failed:', notificationError.message);
+        }
+
         res.status(201).json(course);
     } catch (error) {
         res.status(500).json({ message: error.message });
@@ -302,6 +328,25 @@ const assignCourse = async (req, res) => {
         );
 
         console.log(`Course assigned to ${uniqueStudentIds.length} students. MongoDB modified ${result.modifiedCount} documents.`);
+
+        try {
+            await createNotificationsForRecipients({
+                recipientIds: uniqueStudentIds,
+                actorId: req.user._id,
+                kind: 'course_assigned',
+                entityType: 'course',
+                entityId: course._id,
+                batchKey: `course-assigned-${course._id.toString()}-${Date.now()}`,
+                title: `Course Assigned: ${course.title}`,
+                message: `${req.user.name} assigned this course to you.`,
+                meta: {
+                    route: `/student/courses/${course._id}`,
+                    teacherName: req.user.name,
+                },
+            });
+        } catch (notificationError) {
+            console.error('Course assignment notification failed:', notificationError.message);
+        }
 
         res.json({ message: `Course assigned to ${uniqueStudentIds.length} students successfully` });
 

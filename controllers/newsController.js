@@ -137,10 +137,20 @@ const getCache = (key) => {
     return record.value;
 };
 
+const getStaleCache = (key) => {
+    const record = cacheStore.get(key);
+    return record?.value || null;
+};
+
 const setCache = (key, value, ttlMs) => {
     cacheStore.set(key, { value, expiresAt: Date.now() + ttlMs });
     return value;
 };
+
+const getConfiguredApiKeys = () =>
+    [process.env.NEWS_API_KEY, process.env.NEWS_API_KEY_BACKUP]
+        .map((key) => (key || '').trim())
+        .filter(Boolean);
 
 const buildDisasterQuery = (location) => {
     const disasterPart =
@@ -264,9 +274,8 @@ const getDisasterNews = async (req, res) => {
     const location = (req.query.location || NEWS_DEFAULT_LOCATION).trim();
     const limit = Math.min(Math.max(Number(req.query.limit) || DEFAULT_LIMIT, 5), 20);
     const query = buildDisasterQuery(location);
-    const apiKey = process.env.NEWS_API_KEY || '';
-    const keyFingerprint = apiKey ? apiKey.slice(0, 6) : 'no-key';
-    const cacheKey = `newsapi|${query}|${limit}|${keyFingerprint}`;
+    const apiKeys = getConfiguredApiKeys();
+    const cacheKey = `newsapi|${query}|${limit}`;
     const extraResources = fallbackArticles();
 
     try {
@@ -275,7 +284,7 @@ const getDisasterNews = async (req, res) => {
             return res.json(cached);
         }
 
-        if (!apiKey) {
+        if (!apiKeys.length) {
             return res.json({
                 provider: 'fallback',
                 location,
@@ -286,22 +295,40 @@ const getDisasterNews = async (req, res) => {
             });
         }
 
-        const primaryArticles = await fetchNewsApiBatch({
-            apiKey,
-            query,
-            limit: limit * 2,
-        });
-        let merged = [...primaryArticles];
+        let merged = [];
+        let fetchSucceeded = false;
+        let lastError = null;
 
-        // If location-filtered query is too sparse, enrich with global disaster-only results.
-        if (merged.length < limit) {
-            const globalQuery = buildDisasterQuery('');
-            const globalArticles = await fetchNewsApiBatch({
-                apiKey,
-                query: globalQuery,
-                limit: limit * 2,
-            });
-            merged = dedupeArticles([...merged, ...globalArticles]);
+        for (const apiKey of apiKeys) {
+            try {
+                const primaryArticles = await fetchNewsApiBatch({
+                    apiKey,
+                    query,
+                    limit: limit * 2,
+                });
+                let candidate = [...primaryArticles];
+
+                // If location-filtered query is too sparse, enrich with global disaster-only results.
+                if (candidate.length < limit) {
+                    const globalQuery = buildDisasterQuery('');
+                    const globalArticles = await fetchNewsApiBatch({
+                        apiKey,
+                        query: globalQuery,
+                        limit: limit * 2,
+                    });
+                    candidate = dedupeArticles([...candidate, ...globalArticles]);
+                }
+
+                merged = candidate;
+                fetchSucceeded = true;
+                break;
+            } catch (error) {
+                lastError = error;
+            }
+        }
+
+        if (!fetchSucceeded && lastError) {
+            throw lastError;
         }
 
         const articles = merged.slice(0, limit);
@@ -318,6 +345,15 @@ const getDisasterNews = async (req, res) => {
 
         return res.json(setCache(cacheKey, responsePayload, NEWS_CACHE_TTL_MS));
     } catch (error) {
+        const stale = getStaleCache(cacheKey);
+        if (stale) {
+            return res.json({
+                ...stale,
+                stale: true,
+                message:
+                    'Live news provider is temporarily unavailable. Showing recent cached disaster news.',
+            });
+        }
         return res.status(500).json({
             message: 'Failed to fetch disaster news.',
             error: error.message,
